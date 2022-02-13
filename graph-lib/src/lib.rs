@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
 };
 
+#[cfg(feature = "log_error")]
 use log::trace;
 
 macro_rules! err {
@@ -38,11 +39,14 @@ impl<K: Hash + Eq + Clone, T: Clone> Point<K, T> {
     pub fn add(&mut self, l: K, v: T) -> Option<T> {
         self.childs.insert(l, v)
     }
-    pub fn inner(self) -> T {
-        self.v
+    pub fn inner(&self) -> &T {
+        &self.v
     }
-    pub fn remove_link(&mut self, k: &K)->Option<T>{
+    pub fn remove_link(&mut self, k: &K) -> Option<T> {
         self.childs.remove(&k)
+    }
+    pub fn childs(&self)->&HashMap<K, T>{
+        &self.childs
     }
 }
 
@@ -62,18 +66,18 @@ pub struct GraphIter<K: Clone, T: Clone> {
 }
 
 impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
-    pub fn new(graph: Graph<K, T>, start: K, tp: TpDirected) -> Result<GraphIter<K, T>, Error> {
-        Ok(GraphIter {
+    pub fn new(graph: Graph<K, T>, start: K, tp: TpDirected) -> GraphIter<K, T> {
+        GraphIter {
             position: start,
             visited: HashSet::new(),
             graph,
             tp,
             stack: Vec::new(),
-        })
+        }
     }
 
     fn recursive_deep(&mut self, k: K) -> Option<K> {
-        if let Some(p) = self.graph.get_point(k) {
+        if let Some(p) = self.graph.get_point(&k) {
             if p.childs.is_empty() {
                 if let Some(n) = self.stack.pop() {
                     self.recursive_deep(n)
@@ -104,19 +108,25 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
         }
     }
 
-    fn next_deep(&mut self) -> Option<Point<K, T>> {
-        let p = self.graph.get_point(self.position.clone()).cloned();
+    fn next_deep(&mut self) -> Option<(K, Point<K, T>)> {
+        let p = self.graph.get_point(&self.position).cloned();
         log::trace!("Now point: {:?}", &p);
         if self.stack.is_empty() && self.visited.is_empty() {
             self.stack.push(self.position.clone());
-            return p;
+            return match p {
+                Some(p) => Some((self.position.clone(), p)),
+                None => None,
+            };
         };
         if let Some(_) = p {
             self.visited.insert(self.position.clone());
             match self.recursive_deep(self.position.clone()) {
                 Some(k) => {
                     self.position = k.clone();
-                    self.graph.get_point(k).cloned()
+                    match self.graph.get_point(&k).cloned() {
+                        Some(p) => Some((k, p)),
+                        None => None,
+                    }
                 }
                 None => None,
             }
@@ -124,7 +134,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
             None
         }
     }
-    fn next_width(&mut self) -> Option<Point<K, T>> {
+    fn next_width(&mut self) -> Option<(K, Point<K, T>)> {
         if self.stack.is_empty() && self.visited.is_empty() {
             self.stack.push(self.position.clone())
         }
@@ -132,7 +142,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
             return None;
         };
         self.position = self.stack.get(0).unwrap().clone();
-        if let Some(p) = self.graph.get_point(self.position.clone()) {
+        if let Some(p) = self.graph.get_point(&self.position) {
             log::trace!("Now point: {:?}", &p);
             self.visited.insert(self.position.clone());
             self.stack.extend(p.childs.iter().filter_map(
@@ -142,7 +152,10 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
                 },
             ));
             self.stack.remove(0);
-            self.graph.get_point(self.position.clone()).cloned()
+            match self.graph.get_point(&self.position).cloned() {
+                Some(p) => Some((self.position.clone(), p)),
+                None => None,
+            }
         } else {
             None
         }
@@ -150,7 +163,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
 }
 
 impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> Iterator for GraphIter<K, T> {
-    type Item = Point<K, T>;
+    type Item = (K, Point<K, T>);
     fn next(&mut self) -> Option<Self::Item> {
         match self.tp {
             TpDirected::Deep => self.next_deep(),
@@ -179,8 +192,14 @@ impl<K: Hash + Eq + Clone, T: Clone> Graph<K, T> {
             points: HashMap::new(),
         }
     }
-    pub fn get_point(&self, k: K) -> Option<&Point<K, T>> {
+    pub fn get_point(&self, k: &K) -> Option<&Point<K, T>> {
         self.points.get(&k)
+    }
+    pub fn get_childs(&self, k: &K) -> Option<&HashMap<K, T>> {
+        return match self.get_point(k) {
+            Some(p) => Some(&p.childs),
+            None => None,
+        };
     }
     pub fn add_point(&mut self, k: K, v: T) -> Option<Point<K, T>> {
         self.points.insert(k, Point::new(v))
@@ -198,25 +217,29 @@ impl<K: Hash + Eq + Clone, T: Clone> Graph<K, T> {
         };
         Ok(())
     }
-    pub fn remove_point(&mut self, k: &K)->Option<Point<K, T>>{
+    pub fn remove_point(&mut self, k: &K) -> Option<Point<K, T>> {
         let r = self.points.remove(k);
-        let _: Vec<_> = self.points.iter_mut().map(|(_, p)|{
-            p.remove_link(k);
-            0
-        }).collect();
+        let _: Vec<_> = self
+            .points
+            .iter_mut()
+            .map(|(_, p)| {
+                p.remove_link(k);
+                0
+            })
+            .collect();
         r
     }
-    pub fn remove_link(&mut self, from: &K, to: &K)->Option<T>{
-        let r = if let Some(p) = self.points.get_mut(from){
+    pub fn remove_link(&mut self, from: &K, to: &K) -> Option<T> {
+        let r = if let Some(p) = self.points.get_mut(from) {
             p.remove_link(to)
         } else {
             None
         };
-        if !self.directed{
-            if let Some(p) = self.points.get_mut(to){
+        if !self.directed {
+            if let Some(p) = self.points.get_mut(to) {
                 p.remove_link(from);
             };
-        }; 
+        };
         r
     }
 }
@@ -330,9 +353,9 @@ mod tests {
 # Comment
 "#;
         let g: Graph<usize, String> = Graph::from_str(d).unwrap();
-        let mut i = GraphIter::new(g, 1, crate::TpDirected::Deep).unwrap();
-        assert_eq!("First", i.next().unwrap().v);
-        assert_eq!("Second", i.next().unwrap().v);
+        let mut i = GraphIter::new(g, 1, crate::TpDirected::Deep);
+        assert_eq!("First", i.next().unwrap().1.v);
+        assert_eq!("Second", i.next().unwrap().1.v);
         assert!(i.next().is_none());
     }
     #[test]
@@ -343,9 +366,9 @@ mod tests {
 2 1 SLink
 "#;
         let g: Graph<_, String> = Graph::from_str(s).unwrap();
-        let mut i = GraphIter::new(g, 1, crate::TpDirected::Deep).unwrap();
-        assert_eq!("First", i.next().unwrap().v);
-        assert_eq!("Second", i.next().unwrap().v);
+        let mut i = GraphIter::new(g, 1, crate::TpDirected::Deep);
+        assert_eq!("First", i.next().unwrap().1.v);
+        assert_eq!("Second", i.next().unwrap().1.v);
         assert!(i.next().is_none());
     }
     #[test]
@@ -356,21 +379,21 @@ mod tests {
 1 2 FLink
 1 3 FThird"#;
         let g: Graph<_, String> = Graph::from_str(s).unwrap();
-        let mut i = GraphIter::new(g, 1, crate::TpDirected::Width).unwrap();
-        assert_eq!("First", i.next().unwrap().v);
-        let s = i.next().unwrap().v;
+        let mut i = GraphIter::new(g, 1, crate::TpDirected::Width);
+        assert_eq!("First", i.next().unwrap().1.v);
+        let s = i.next().unwrap().1.v;
         let sa: String = if &s == "Third" {
             "Second".into()
-        } else if &s == "Second"{
+        } else if &s == "Second" {
             "Third".into()
         } else {
             panic!("Not Third or Second");
         };
-        assert_eq!(sa, i.next().unwrap().v);
+        assert_eq!(sa, i.next().unwrap().1.v);
         assert!(i.next().is_none());
     }
     #[test]
-    fn add_remove_directed_test(){
+    fn add_remove_directed_test() {
         let mut g = Graph::new(true);
         g.add_point(1, "First");
         g.add_point(2, "Second");
@@ -379,13 +402,13 @@ mod tests {
         g.add_link(2, 3, "FSecond").unwrap();
         g.add_link(3, 1, "Save link").unwrap();
         g.remove_point(&2);
-        let mut i  = GraphIter::new(g.clone(), 1, crate::TpDirected::Width).unwrap();
-        assert_eq!("First", i.next().unwrap().v);
+        let mut i = GraphIter::new(g.clone(), 1, crate::TpDirected::Width);
+        assert_eq!("First", i.next().unwrap().1.v);
         assert!(i.next().is_none());
-        
-        let mut i  = GraphIter::new(g.clone(), 3, crate::TpDirected::Width).unwrap();
-        assert_eq!("Third", i.next().unwrap().v);
-        assert_eq!("First", i.next().unwrap().v);
+
+        let mut i = GraphIter::new(g.clone(), 3, crate::TpDirected::Width);
+        assert_eq!("Third", i.next().unwrap().1.v);
+        assert_eq!("First", i.next().unwrap().1.v);
         assert!(i.next().is_none());
     }
 }

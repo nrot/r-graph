@@ -41,6 +41,9 @@ impl<K: Hash + Eq + Clone, T: Clone> Point<K, T> {
     pub fn inner(self) -> T {
         self.v
     }
+    pub fn remove_link(&mut self, k: &K)->Option<T>{
+        self.childs.remove(&k)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -103,6 +106,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
 
     fn next_deep(&mut self) -> Option<Point<K, T>> {
         let p = self.graph.get_point(self.position.clone()).cloned();
+        log::trace!("Now point: {:?}", &p);
         if self.stack.is_empty() && self.visited.is_empty() {
             self.stack.push(self.position.clone());
             return p;
@@ -129,7 +133,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
         };
         self.position = self.stack.get(0).unwrap().clone();
         if let Some(p) = self.graph.get_point(self.position.clone()) {
-            println!("Now point: {:?}", &p);
+            log::trace!("Now point: {:?}", &p);
             self.visited.insert(self.position.clone());
             self.stack.extend(p.childs.iter().filter_map(
                 |(k, _)| match self.visited.contains(k) {
@@ -158,6 +162,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> Iterator for GraphIter<K, T
 #[derive(Debug, Clone)]
 pub struct Graph<K: Clone, T: Clone> {
     points: HashMap<K, Point<K, T>>,
+    ///Ориентированный или не ориентированный  граф. true - ориентированный. false - не ориентированный .
     directed: bool,
 }
 
@@ -192,6 +197,27 @@ impl<K: Hash + Eq + Clone, T: Clone> Graph<K, T> {
             None => return Err(Error::NotPoint),
         };
         Ok(())
+    }
+    pub fn remove_point(&mut self, k: &K)->Option<Point<K, T>>{
+        let r = self.points.remove(k);
+        let _: Vec<_> = self.points.iter_mut().map(|(_, p)|{
+            p.remove_link(k);
+            0
+        }).collect();
+        r
+    }
+    pub fn remove_link(&mut self, from: &K, to: &K)->Option<T>{
+        let r = if let Some(p) = self.points.get_mut(from){
+            p.remove_link(to)
+        } else {
+            None
+        };
+        if !self.directed{
+            if let Some(p) = self.points.get_mut(to){
+                p.remove_link(from);
+            };
+        }; 
+        r
     }
 }
 
@@ -330,12 +356,36 @@ mod tests {
 1 2 FLink
 1 3 FThird"#;
         let g: Graph<_, String> = Graph::from_str(s).unwrap();
-        println!("G: {:?}", &g);
         let mut i = GraphIter::new(g, 1, crate::TpDirected::Width).unwrap();
-        println!("I: {:?}", &i);
         assert_eq!("First", i.next().unwrap().v);
+        let s = i.next().unwrap().v;
+        let sa: String = if &s == "Third" {
+            "Second".into()
+        } else if &s == "Second"{
+            "Third".into()
+        } else {
+            panic!("Not Third or Second");
+        };
+        assert_eq!(sa, i.next().unwrap().v);
+        assert!(i.next().is_none());
+    }
+    #[test]
+    fn add_remove_directed_test(){
+        let mut g = Graph::new(true);
+        g.add_point(1, "First");
+        g.add_point(2, "Second");
+        g.add_link(1, 2, "FLink").unwrap();
+        g.add_point(3, "Third");
+        g.add_link(2, 3, "FSecond").unwrap();
+        g.add_link(3, 1, "Save link").unwrap();
+        g.remove_point(&2);
+        let mut i  = GraphIter::new(g.clone(), 1, crate::TpDirected::Width).unwrap();
+        assert_eq!("First", i.next().unwrap().v);
+        assert!(i.next().is_none());
+        
+        let mut i  = GraphIter::new(g.clone(), 3, crate::TpDirected::Width).unwrap();
         assert_eq!("Third", i.next().unwrap().v);
-        assert_eq!("Second", i.next().unwrap().v);
+        assert_eq!("First", i.next().unwrap().v);
         assert!(i.next().is_none());
     }
 }

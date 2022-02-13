@@ -79,7 +79,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
     fn recursive_deep(&mut self, k: K) -> Option<K> {
         if let Some(p) = self.graph.get_point(&k) {
             if p.childs.is_empty() {
-                if let Some(n) = self.stack.pop_front() {
+                if let Some(n) = self.stack.pop_back() {
                     self.recursive_deep(n)
                 } else {
                     None
@@ -96,7 +96,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
                     self.stack.push_back(c.clone());
                     Some(c.clone())
                 } else {
-                    if let Some(n) = self.stack.pop_front() {
+                    if let Some(n) = self.stack.pop_back() {
                         self.recursive_deep(n)
                     } else {
                         None

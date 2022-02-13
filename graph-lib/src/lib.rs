@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
     hash::Hash,
     str::FromStr,
@@ -62,7 +62,7 @@ pub struct GraphIter<K: Clone, T: Clone> {
     visited: HashSet<K>,
     graph: Graph<K, T>,
     tp: TpDirected,
-    stack: Vec<K>,
+    stack: VecDeque<K>,
 }
 
 impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
@@ -72,14 +72,14 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
             visited: HashSet::new(),
             graph,
             tp,
-            stack: Vec::new(),
+            stack: VecDeque::new(),
         }
     }
 
     fn recursive_deep(&mut self, k: K) -> Option<K> {
         if let Some(p) = self.graph.get_point(&k) {
             if p.childs.is_empty() {
-                if let Some(n) = self.stack.pop() {
+                if let Some(n) = self.stack.pop_front() {
                     self.recursive_deep(n)
                 } else {
                     None
@@ -93,10 +93,10 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
                         false => Some(k),
                     });
                 if let Some(c) = c {
-                    self.stack.push(c.clone());
+                    self.stack.push_back(c.clone());
                     Some(c.clone())
                 } else {
-                    if let Some(n) = self.stack.pop() {
+                    if let Some(n) = self.stack.pop_front() {
                         self.recursive_deep(n)
                     } else {
                         None
@@ -112,7 +112,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
         let p = self.graph.get_point(&self.position).cloned();
         log::trace!("Now point: {:?}", &p);
         if self.stack.is_empty() && self.visited.is_empty() {
-            self.stack.push(self.position.clone());
+            self.stack.push_back(self.position.clone());
             return match p {
                 Some(p) => Some((self.position.clone(), p)),
                 None => None,
@@ -136,7 +136,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
     }
     fn next_width(&mut self) -> Option<(K, Point<K, T>)> {
         if self.stack.is_empty() && self.visited.is_empty() {
-            self.stack.push(self.position.clone())
+            self.stack.push_back(self.position.clone())
         }
         if self.stack.is_empty() {
             return None;
@@ -151,7 +151,7 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
                     false => Some(k.clone()),
                 },
             ));
-            self.stack.remove(0);
+            self.stack.pop_front();
             match self.graph.get_point(&self.position).cloned() {
                 Some(p) => Some((self.position.clone(), p)),
                 None => None,

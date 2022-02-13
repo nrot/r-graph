@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 log = {version="0.4"}
-itertools={version="0.10"}
 
 [features]
 log_error = []

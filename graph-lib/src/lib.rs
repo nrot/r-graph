@@ -43,9 +43,9 @@ impl<K: Hash + Eq + Clone, T: Clone> Point<K, T> {
         &self.v
     }
     pub fn remove_link(&mut self, k: &K) -> Option<T> {
-        self.childs.remove(&k)
+        self.childs.remove(k)
     }
-    pub fn childs(&self)->&HashMap<K, T>{
+    pub fn childs(&self) -> &HashMap<K, T> {
         &self.childs
     }
 }
@@ -95,12 +95,10 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
                 if let Some(c) = c {
                     self.stack.push_back(c.clone());
                     Some(c.clone())
+                } else if let Some(n) = self.stack.pop_back() {
+                    self.recursive_deep(n)
                 } else {
-                    if let Some(n) = self.stack.pop_back() {
-                        self.recursive_deep(n)
-                    } else {
-                        None
-                    }
+                    None
                 }
             }
         } else {
@@ -118,15 +116,12 @@ impl<K: Hash + Eq + Clone + Debug, T: Clone + Debug> GraphIter<K, T> {
                 None => None,
             };
         };
-        if let Some(_) = p {
+        if p.is_some() {
             self.visited.insert(self.position.clone());
             match self.recursive_deep(self.position.clone()) {
                 Some(k) => {
                     self.position = k.clone();
-                    match self.graph.get_point(&k).cloned() {
-                        Some(p) => Some((k, p)),
-                        None => None,
-                    }
+                    self.graph.get_point(&k).cloned().map(|p|(k,p))
                 }
                 None => None,
             }
@@ -193,7 +188,7 @@ impl<K: Hash + Eq + Clone, T: Clone> Graph<K, T> {
         }
     }
     pub fn get_point(&self, k: &K) -> Option<&Point<K, T>> {
-        self.points.get(&k)
+        self.points.get(k)
     }
     pub fn get_childs(&self, k: &K) -> Option<&HashMap<K, T>> {
         return match self.get_point(k) {
@@ -212,7 +207,7 @@ impl<K: Hash + Eq + Clone, T: Clone> Graph<K, T> {
             };
         }
         match self.points.get_mut(&from) {
-            Some(p) => p.add(to.clone(), v.clone()),
+            Some(p) => p.add(to.clone(), v),
             None => return Err(Error::NotPoint),
         };
         Ok(())
@@ -275,8 +270,8 @@ impl<K: Hash + Eq + FromStr + Clone, T: FromStr + Clone> FromStr for Graph<K, T>
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut g = Graph::new(true);
-        for s in String::from(s).split("\n") {
-            if s.starts_with("#") || s.is_empty() {
+        for s in String::from(s).split('\n') {
+            if s.starts_with('#') || s.is_empty() {
                 continue;
             };
             let mut spl = s.split(char::is_whitespace);
@@ -295,7 +290,7 @@ impl<K: Hash + Eq + FromStr + Clone, T: FromStr + Clone> FromStr for Graph<K, T>
             let mut buff = String::new();
             let mut k2: Option<K> = None;
             let mut f = true;
-            while let Some(d) = spl.next() {
+            for d in spl {
                 if f {
                     f = false;
                     match K::from_str(d) {

@@ -1,7 +1,6 @@
 use std::{str::FromStr, fs::File, io::Read};
 
 use graph_lib::{self, Graph, GraphIter};
-use simple_logger;
 
 fn main() {
     simple_logger::init_with_level(if cfg!(debug_assertions) {
